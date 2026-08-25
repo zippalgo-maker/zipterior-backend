@@ -1,0 +1,11 @@
+{
+  "project": "Zipterior Backend",
+  "version": "1.0.0",
+  "status": "production_ready",
+  "progress": 100,
+  "previous_version": "0.6.3",
+  "release_type": "production_cutover",
+  "database_migration": false,
+  "full_regression_required": true,
+  "next_version": null
+}

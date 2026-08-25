@@ -1,0 +1,8 @@
+ZIPTERIOR_BACKEND_PRODUCTION_READY
+version=v1.0.0
+progress=100
+verified_at=20260810_162052
+predeploy_backup=/srv/zipterior/backups/releases/pre_v1.0.0_20260810_162052
+stable_backend=/srv/zipterior/backups/backend/backend_v1.0.0_production_ready_20260810_162052.tar.gz
+stable_database=/srv/zipterior/backups/database/database_v1.0.0_production_ready_20260810_162052.dump
+stable_config=/srv/zipterior/backups/config/env_v1.0.0_production_20260810_162052

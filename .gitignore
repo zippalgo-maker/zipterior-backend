@@ -1,0 +1,29 @@
+# secrets - 절대 커밋 금지
+.env
+.env.*
+*.env
+*.env.*
+
+# 타임스탬프 백업 파일들
+*.bak
+*.bak.*
+*.bak_*
+*.bak-*
+*_bak
+
+# python
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# 대용량 데이터/운영 산출물 (소스코드 아님)
+backups/
+releases/
+imports/
+logs/
+media/
+uploads/
+frontend/
