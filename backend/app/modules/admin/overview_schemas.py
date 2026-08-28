@@ -49,6 +49,8 @@ class AdminCompanyItem(BaseModel):
     plan_key: str = "free"
     plan_display_name: str = "일반"
     portfolio_count: int = 0
+    sales_contact_count: int = 0
+    last_sales_contact_at: datetime | None = None
 
 class AdminCompanyListResponse(BaseModel):
     items: list[AdminCompanyItem]

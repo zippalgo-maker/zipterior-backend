@@ -25,6 +25,7 @@ from app.modules.admin.overview_router import router as admin_overview_router
 from app.modules.admin.portfolio_router import router as admin_portfolios_router
 from app.modules.admin.comment_moderation_router import router as admin_comment_moderation_router
 from app.modules.admin.complex_router import router as admin_complexes_router
+from app.modules.admin.sales_contact_router import router as admin_sales_contacts_router
 from app.modules.public_map.router import router as public_map_router
 from app.modules.estimates.router import router as estimates_router
 from app.modules.reviews.router import router as reviews_router
@@ -82,6 +83,7 @@ app.include_router(admin_overview_router)
 app.include_router(admin_portfolios_router)
 app.include_router(admin_comment_moderation_router)
 app.include_router(admin_complexes_router)
+app.include_router(admin_sales_contacts_router)
 app.include_router(public_map_router)
 app.include_router(estimates_router)
 app.include_router(reviews_router)
