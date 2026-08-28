@@ -1,6 +1,26 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+
+class AdminCompanyCreateRequest(BaseModel):
+    """관리자가 로그인 계정 없이 업체 정보만 직접 등록 -- bulk_import와
+    동일하게 owner_user_id 없이 companies row만 생성한다(나중에 그
+    업체 담당자가 실제로 회원가입하면 그 계정과 연결하는 건 별도 작업)."""
+
+    name: str = Field(min_length=1, max_length=150)
+    business_number: str | None = Field(default=None, max_length=50)
+    representative_name: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=200)
+    postal_code: str | None = Field(default=None, max_length=20)
+    address: str | None = None
+    address_detail: str | None = None
+    sido: str | None = Field(default=None, max_length=50)
+    sigungu: str | None = Field(default=None, max_length=50)
+    eupmyeondong: str | None = Field(default=None, max_length=50)
+    intro: str | None = None
+    website_url: str | None = Field(default=None, max_length=300)
+
 class AdminDashboardResponse(BaseModel):
     total_users: int
     total_companies: int

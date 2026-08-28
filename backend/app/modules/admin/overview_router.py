@@ -8,7 +8,7 @@ from app.modules.admin.overview_schemas import (
     AdminActionLogListResponse, AdminUserDetailResponse, AdminReasonRequest,
     AdminUnlinkOAuthResponse, AdminRevokeSessionsResponse,
     OrphanedOAuthAccountListResponse, AdminDeleteResponse,
-    AdminCompanyDetailResponse,
+    AdminCompanyDetailResponse, AdminCompanyCreateRequest,
 )
 from app.modules.audit.service import AuditService
 
@@ -27,6 +27,55 @@ def get_admin_users(current_admin: CurrentAdmin, q: str | None = Query(default=N
 def get_admin_companies(current_admin: CurrentAdmin, q: str | None = Query(default=None, max_length=100), company_status: str | None = Query(default=None, alias="status"), sido: str | None = Query(default=None, max_length=20), plan_key: str | None = Query(default=None, max_length=30), limit: int = Query(default=100, ge=1, le=100), offset: int = Query(default=0, ge=0), session: Session = Depends(get_db)) -> dict:
     items,total=repo.list_companies(session,q=q,company_status=company_status,sido=sido,plan_key=plan_key,limit=limit,offset=offset)
     return {"items":items,"total":total,"limit":limit,"offset":offset}
+
+
+# 2026-08-28: 업체관리 "등록" 버튼 -- 관리자가 로그인 계정 없이 업체
+# 정보만 직접 등록(bulk_import와 동일한 owner_user_id=NULL 방식). 사업자
+# 등록번호가 이미 있는 업체면 막는다(자체가입 CompanyBusinessNumberExistsError
+# 와 동일한 취지).
+@router.post("/companies", response_model=AdminCompanyDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_admin_company(
+    payload: AdminCompanyCreateRequest,
+    current_admin: CurrentAdmin,
+    session: Session = Depends(get_db),
+) -> dict:
+    if payload.business_number and repo.find_company_by_business_number(session, payload.business_number):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 등록된 사업자등록번호입니다.",
+        )
+    try:
+        company_id = repo.create_company_admin(
+            session,
+            name=payload.name,
+            business_number=payload.business_number,
+            representative_name=payload.representative_name,
+            phone=payload.phone,
+            email=payload.email,
+            postal_code=payload.postal_code,
+            address=payload.address,
+            address_detail=payload.address_detail,
+            sido=payload.sido,
+            sigungu=payload.sigungu,
+            eupmyeondong=payload.eupmyeondong,
+            intro=payload.intro,
+            website_url=payload.website_url,
+            approved_by=current_admin["id"],
+        )
+        AuditService.record(
+            session=session,
+            admin_user_id=current_admin["id"],
+            action_type="company.created_by_admin",
+            target_type="company",
+            target_id=company_id,
+            after_data={"name": payload.name, "business_number": payload.business_number},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return repo.get_company_detail(session, company_id)
 
 
 # 2026-08-25: 업체관리 "상세" 버튼용(회원 상세 get_admin_user_detail과 동일 패턴).

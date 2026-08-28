@@ -1,8 +1,90 @@
+import re
+import secrets
 from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.common.rich_text import rich_text_to_plain
+
+
+def _make_company_slug(name: str) -> str:
+    normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "-", name.strip())
+    normalized = normalized.strip("-").lower() or "company"
+    return f"{normalized}-{secrets.token_hex(4)}"
+
+
+def find_company_by_business_number(session: Session, business_number: str) -> dict[str, Any] | None:
+    row = session.execute(
+        text(
+            """
+            SELECT id, name, business_number, status
+            FROM companies
+            WHERE business_number = :business_number AND deleted_at IS NULL
+            LIMIT 1
+            """
+        ),
+        {"business_number": business_number},
+    ).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+def create_company_admin(
+    session: Session,
+    *,
+    name: str,
+    business_number: str | None,
+    representative_name: str | None,
+    phone: str | None,
+    email: str | None,
+    postal_code: str | None,
+    address: str | None,
+    address_detail: str | None,
+    sido: str | None,
+    sigungu: str | None,
+    eupmyeondong: str | None,
+    intro: str | None,
+    website_url: str | None,
+    approved_by: int,
+) -> int:
+    return int(
+        session.execute(
+            text(
+                """
+                INSERT INTO companies (
+                    owner_user_id, name, slug, business_number, representative_name,
+                    phone, email, postal_code, address, address_detail,
+                    sido, sigungu, eupmyeondong, intro, website_url,
+                    status, consultation_available, is_visible_on_map,
+                    approved_at, approved_by
+                ) VALUES (
+                    NULL, :name, :slug, :business_number, :representative_name,
+                    :phone, :email, :postal_code, :address, :address_detail,
+                    :sido, :sigungu, :eupmyeondong, :intro, :website_url,
+                    'active', TRUE, FALSE,
+                    NOW(), :approved_by
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "name": name,
+                "slug": _make_company_slug(name),
+                "business_number": business_number,
+                "representative_name": representative_name,
+                "phone": phone,
+                "email": email,
+                "postal_code": postal_code,
+                "address": address,
+                "address_detail": address_detail,
+                "sido": sido,
+                "sigungu": sigungu,
+                "eupmyeondong": eupmyeondong,
+                "intro": intro,
+                "website_url": website_url,
+                "approved_by": approved_by,
+            },
+        ).scalar_one()
+    )
 
 
 def dashboard(session: Session) -> dict[str, int]:
