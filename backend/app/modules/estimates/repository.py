@@ -126,6 +126,18 @@ def find_customer_estimate(session: Session, *, estimate_id: int, customer_id: i
     return dict(row) if row else None
 
 
+def find_estimate_by_id(session: Session, *, estimate_id: int) -> dict[str, Any] | None:
+    """v1.10.1(2026-08-26): 시공 진행상황/리뷰는 고객뿐 아니라 업체도
+    자기 견적인지 확인해야 해서, customer_id로 안 좁히는 조회가 필요."""
+    row = session.execute(
+        text(BASE_SELECT + " WHERE er.id=:estimate_id"),
+        {"estimate_id": estimate_id},
+    ).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+
+
 def list_customer_estimates(session: Session, *, customer_id: int, limit: int, offset: int) -> list[dict[str, Any]]:
     rows = session.execute(
         text(BASE_SELECT + " WHERE er.customer_id=:customer_id ORDER BY er.created_at DESC, er.id DESC LIMIT :limit OFFSET :offset"),
@@ -608,3 +620,57 @@ def list_company_notification_users(session: Session, *, company_ids: list[int])
     ).bindparams(bindparam("company_ids", expanding=True))
     rows = session.execute(stmt, {"company_ids": company_ids}).mappings().all()
     return [dict(row) for row in rows]
+
+
+# v1.10.1(2026-08-26): 시공 진행상황(목업 13번 화면) -- 5단계 공정.
+MILESTONE_PHASES = ["contract", "demolition", "mep", "carpentry_finish", "completion"]
+
+
+def list_milestones(session: Session, *, estimate_id: int) -> list[dict[str, Any]]:
+    # seed_milestones()가 MILESTONE_PHASES 순서 그대로 순차 INSERT하므로
+    # id 오름차순 정렬이 곧 공정 순서와 같다(array_position 등 굳이
+    # 파라미터 배열을 안 써도 됨).
+    rows = session.execute(
+        text(
+            "SELECT phase_key, status, note, completed_at, updated_at "
+            "FROM estimate_milestones WHERE estimate_request_id=:eid ORDER BY id"
+        ),
+        {"eid": estimate_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def seed_milestones(session: Session, *, estimate_id: int, all_done: bool) -> None:
+    """계약(contracted) 시점엔 1단계(계약완료)만 done, 준공(closed)
+    시점엔 5단계 전부 done으로 처음 조회될 때 한 번 채워 넣는다(회사가
+    실제로 갱신하기 전까지의 합리적인 기본값)."""
+    for phase in MILESTONE_PHASES:
+        done = all_done or phase == "contract"
+        session.execute(
+            text(
+                "INSERT INTO estimate_milestones(estimate_request_id, phase_key, status, completed_at) "
+                "VALUES (:eid, :phase, :status, CASE WHEN :done THEN NOW() ELSE NULL END) "
+                "ON CONFLICT (estimate_request_id, phase_key) DO NOTHING"
+            ),
+            {"eid": estimate_id, "phase": phase, "status": "done" if done else "pending", "done": done},
+        )
+    session.commit()
+
+
+def upsert_milestone(session: Session, *, estimate_id: int, phase_key: str, status: str, note: str | None) -> None:
+    # v1.10.1(2026-08-26): :status를 컬럼 대입("status=:status")과 비교
+    # ("CASE WHEN :status=..") 양쪽에 같이 쓰면 psycopg가 서로 다른
+    # 타입(character varying vs text)으로 추론해 AmbiguousParameter가
+    # 남(이 코드베이스에서 이미 한 번 겪었던 패턴, public_map/repository.py
+    # 참고). CAST(:status AS varchar)로 비교 쪽 타입을 고정해서 해결.
+    session.execute(
+        text(
+            "INSERT INTO estimate_milestones(estimate_request_id, phase_key, status, note, completed_at, updated_at) "
+            "VALUES (:eid, :phase, :status, :note, CASE WHEN CAST(:status AS varchar)='done' THEN NOW() ELSE NULL END, NOW()) "
+            "ON CONFLICT (estimate_request_id, phase_key) DO UPDATE SET "
+            "status=:status, note=:note, "
+            "completed_at=CASE WHEN CAST(:status AS varchar)='done' THEN NOW() ELSE NULL END, updated_at=NOW()"
+        ),
+        {"eid": estimate_id, "phase": phase_key, "status": status, "note": note},
+    )
+    session.commit()

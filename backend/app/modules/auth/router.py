@@ -9,8 +9,10 @@ from app.modules.auth.schemas import (
     LogoutRequest,
     MessageResponse,
     RefreshTokenRequest,
+    SsoExchangeRequest,
     TokenResponse,
     UserResponse,
+    UserSettingsUpdateRequest,
 )
 from app.modules.auth import repository
 from pydantic import EmailStr
@@ -119,6 +121,29 @@ def me(current_user: CurrentUser) -> dict:
     return public_user(current_user)
 
 
+# v1.10.1(2026-08-26): 알림 설정 화면(목업 15번) -- 견적응답/시공업체댓글/
+# 현장사진 3개 토글 + 마케팅 동의. 부분 갱신(넘긴 키만 바뀜)이라 기존
+# notification_prefs와 merge해서 저장한다.
+@router.patch("/me/settings", response_model=UserResponse)
+def update_my_settings(
+    payload: UserSettingsUpdateRequest,
+    current_user: CurrentUser,
+    session: Session = Depends(get_db),
+) -> dict:
+    prefs_update = None
+    if payload.notification_prefs is not None:
+        merged = dict(current_user.get("notification_prefs") or {})
+        merged.update(payload.notification_prefs.model_dump(exclude_none=True))
+        prefs_update = merged
+    row = repository.update_user_settings(
+        session,
+        user_id=current_user["id"],
+        notification_prefs=prefs_update,
+        marketing_agreed=payload.marketing_agreed,
+    )
+    return public_user(row)
+
+
 @router.post(
     "/refresh",
     response_model=TokenResponse,
@@ -190,3 +215,42 @@ def logout_all(
         current_user["id"],
     )
     return {"message": "모든 기기에서 로그아웃되었습니다."}
+
+
+@router.post(
+    "/sso/exchange",
+    response_model=TokenResponse,
+)
+def sso_exchange(
+    payload: SsoExchangeRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> dict:
+    """집팔고360 로그인 사용자를 iframe(/jipterior) 진입 시 자동으로
+    집테리어 계정에 연동한다. 실패하면 400을 던지고, 프론트는 이걸
+    조용히 무시하고 기존 로그인 화면으로 폴백한다(집테리어 자체
+    로그인은 전혀 영향 없음). 설계: zippalgo360 저장소
+    docs/WORK_LOG.md "로그인 통합 설계 제안" 섹션 참고.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    ip_address = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else request.client.host if request.client else None
+    )
+
+    result = AuthService.sso_exchange(
+        session,
+        payload.code,
+        ip_address=ip_address,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SSO 로그인을 처리할 수 없습니다.",
+        )
+
+    result["user"] = public_user(result["user"])
+    return result

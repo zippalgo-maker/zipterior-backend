@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import UploadFile
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import AuditService
@@ -101,7 +102,7 @@ class EstimateService:
             estimate_id = repository.create_estimate(
                 session,
                 customer_id=user["id"],
-                data=payload.model_dump(),
+                data=payload.model_dump(exclude={"company_ids"}),
             )
             EventOutboxService.publish(
                 session=session,
@@ -111,13 +112,61 @@ class EstimateService:
                 payload={"estimate_id": estimate_id, "customer_id": user["id"]},
                 metadata={"source": "estimate_core"},
             )
+            # v2.5.x: 고객이 "같은 조건 시공업체"/"지역 파트너" 후보 중
+            # 여러 곳을 직접 골라(company_ids) 한 번에 견적요청을 보내는
+            # 다건 배정. 아래 v2.5.1 포트폴리오 단일 자동배정과 동일한
+            # 패턴(validate_active_companies + assign_companies)을 그대로
+            # 재사용하되, 고객이 명시적으로 고른 대상이라는 점만 다르다.
+            # company_ids가 있으면 이걸 우선하고, 없을 때만 기존
+            # portfolio_id 기반 단일 자동배정으로 폴백한다(둘 다 없으면
+            # 기존처럼 'submitted' 상태로 남아 관리자 배정을 기다림).
+            if payload.company_ids:
+                active_ids = repository.validate_active_companies(
+                    session, company_ids=payload.company_ids
+                )
+                if active_ids:
+                    repository.assign_companies(
+                        session, estimate_id=estimate_id, company_ids=active_ids
+                    )
+                    repository.update_estimate_status(
+                        session, estimate_id=estimate_id, status="distributing"
+                    )
+                    AuditService.record(
+                        session=session,
+                        admin_user_id=None,
+                        action_type="estimate.customer_multi_assigned",
+                        target_type="estimate_request",
+                        target_id=estimate_id,
+                        after_data={"status": "distributing", "company_ids": active_ids},
+                        reason="고객이 다건 견적요청 화면에서 직접 선택한 업체 배정",
+                        metadata={"source": "customer_multi_select"},
+                    )
+                    EventOutboxService.publish(
+                        session=session,
+                        event_name="EstimateAssigned",
+                        aggregate_type="estimate_request",
+                        aggregate_id=str(estimate_id),
+                        payload={"estimate_id": estimate_id, "company_ids": active_ids},
+                        metadata={"source": "customer_multi_select"},
+                    )
+                    NotificationService.notify_companies(
+                        session,
+                        company_ids=active_ids,
+                        notification_type="estimate_assigned",
+                        title="새 견적 요청이 배정되었습니다.",
+                        message="고객이 여러 업체 중 하나로 선택해 보낸 새로운 견적 요청을 확인해 주세요.",
+                        target_type="estimate_request",
+                        target_id=estimate_id,
+                    )
             # v2.5.1: 포트폴리오에서 들어온 견적문의(portfolio_id 포함)는
             # 관리자가 수동으로 업체를 찾아 배정할 필요 없이, 그 포트폴리오를
             # 등록한 회사로 서버가 스스로 즉시 배정한다(CLAUDE.md 4번 원칙 --
             # "서버가 스스로" 처리 우선). 대상 회사가 이미 비활성/삭제된
             # 경우는 조용히 건너뛰고 기존처럼 관리자 배정 대상('submitted')
-            # 으로 남긴다. V2.5.0_PLAN.md 참고.
-            if payload.portfolio_id is not None:
+            # 으로 남긴다. V2.5.0_PLAN.md 참고. company_ids로 이미 배정됐으면
+            # (위 분기) 건너뛴다 -- 같은 견적에 두 경로가 동시에 배정하지
+            # 않도록.
+            elif payload.portfolio_id is not None:
                 company_id = repository.get_portfolio_company_id(
                     session, portfolio_id=payload.portfolio_id
                 )
@@ -542,3 +591,64 @@ class EstimateService:
             "assignment_count": len(repository.list_assignments(session, estimate_id=estimate_id)),
             "candidate_count": len(candidates), "message": "견적 요청 자동 추천/배정이 완료되었습니다.",
         }
+
+    # v1.10.1(2026-08-26): 시공 진행상황(목업 13번 화면). 새 테이블
+    # estimate_milestones만 추가하고 댓글은 기존 chat 모듈(estimate_
+    # request_id로 연결된 고객-업체 상담방)을 그대로 재사용한다 -- 별도
+    # 댓글 API 불필요.
+    @staticmethod
+    def _check_milestone_access(session: Session, *, user: dict[str, Any], row: dict[str, Any]) -> None:
+        if user["role"] == "customer":
+            if row["customer_id"] != user["id"]:
+                raise EstimateAccessDeniedError("본인 견적 요청만 조회할 수 있습니다.")
+        elif user["role"] == "company":
+            company = EstimateService._company(session, user)
+            assignment = repository.find_company_assignment(session, estimate_id=row["id"], company_id=company["id"])
+            if assignment is None:
+                raise EstimateAccessDeniedError("배정된 견적 요청이 아닙니다.")
+        elif user["role"] not in {"admin", "super_admin"}:
+            raise EstimateAccessDeniedError("해당 기능을 사용할 권한이 없습니다.")
+
+    @staticmethod
+    def get_milestones(session: Session, *, user: dict[str, Any], estimate_id: int) -> dict[str, Any]:
+        row = repository.find_estimate_by_id(session, estimate_id=estimate_id)
+        if row is None:
+            raise EstimateNotFoundError("견적 요청을 찾을 수 없습니다.")
+        EstimateService._check_milestone_access(session, user=user, row=row)
+
+        items = repository.list_milestones(session, estimate_id=estimate_id)
+        if not items and row["status"] in {"contracted", "closed"}:
+            repository.seed_milestones(session, estimate_id=estimate_id, all_done=row["status"] == "closed")
+            items = repository.list_milestones(session, estimate_id=estimate_id)
+        return {"items": items}
+
+    @staticmethod
+    def update_milestone(session: Session, *, user: dict[str, Any], estimate_id: int, phase_key: str, status: str, note: str | None) -> dict[str, Any]:
+        row = repository.find_estimate_by_id(session, estimate_id=estimate_id)
+        if row is None:
+            raise EstimateNotFoundError("견적 요청을 찾을 수 없습니다.")
+        if user["role"] == "company":
+            company = EstimateService._company(session, user)
+            assignment = repository.find_company_assignment(session, estimate_id=estimate_id, company_id=company["id"])
+            if assignment is None or assignment["status"] != "contracted":
+                raise EstimateAccessDeniedError("계약된 견적 요청만 진행상황을 업데이트할 수 있습니다.")
+        elif user["role"] not in {"admin", "super_admin"}:
+            raise EstimateAccessDeniedError("해당 기능을 사용할 권한이 없습니다.")
+        if row["status"] not in {"contracted", "closed"}:
+            raise EstimateStateConflictError("계약 이후에만 진행상황을 기록할 수 있습니다.")
+
+        if not repository.list_milestones(session, estimate_id=estimate_id):
+            repository.seed_milestones(session, estimate_id=estimate_id, all_done=False)
+        repository.upsert_milestone(session, estimate_id=estimate_id, phase_key=phase_key, status=status, note=note)
+
+        prefs = session.execute(
+            text("SELECT notification_prefs FROM users WHERE id=:id"), {"id": row["customer_id"]}
+        ).scalar()
+        if (prefs or {}).get("photo_upload", True):
+            NotificationService.create(
+                session, user_id=row["customer_id"], notification_type="milestone_updated",
+                title="시공 진행상황이 업데이트됐어요", message=f"{row.get('complex_name') or '견적'} 공정 소식이 도착했어요.",
+                target_type="estimate_request", target_id=estimate_id,
+            )
+        session.commit()
+        return {"items": repository.list_milestones(session, estimate_id=estimate_id)}

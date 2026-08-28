@@ -15,6 +15,19 @@ class PublicCompanyPortfolioSummary(BaseModel):
     published_at: datetime
 
 
+class PublicCompanyListItemResponse(BaseModel):
+    id: int
+    name: str
+    logo_path: str | None
+    sido: str | None
+    sigungu: str | None
+    portfolio_count: int
+
+
+class PublicCompanyListResponse(BaseModel):
+    items: list[PublicCompanyListItemResponse]
+
+
 class PublicServiceRegionResponse(BaseModel):
     sido: str | None
     sigungu: str | None

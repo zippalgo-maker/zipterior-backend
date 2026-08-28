@@ -22,6 +22,8 @@ from app.modules.estimates.schemas import (
     EstimateImageDeleteResponse,
     EstimateImageUploadResponse,
     EstimateListResponse,
+    EstimateMilestoneListResponse,
+    EstimateMilestoneUpdateRequest,
     EstimateResponse,
     EstimateStatus,
 )
@@ -197,4 +199,31 @@ def auto_assign_admin_estimate(
     try:
         return EstimateService.auto_assign_admin(session, admin_user_id=current_admin["id"], estimate_id=estimate_id, limit=payload.limit)
     except (EstimateNotFoundError, EstimateStateConflictError, EstimateValidationError) as exc:
+        handle_estimate_error(exc)
+
+
+# v1.10.1(2026-08-26): 시공 진행상황(목업 13번 화면) -- 고객/업체/관리자
+# 공용 조회, 업데이트는 업체(계약 확정 건)·관리자만.
+@router.get("/api/v1/estimates/{estimate_id}/milestones", response_model=EstimateMilestoneListResponse)
+def get_estimate_milestones(estimate_id: int, current_user: CurrentUser, session: Session = Depends(get_db)) -> dict:
+    try:
+        return EstimateService.get_milestones(session, user=current_user, estimate_id=estimate_id)
+    except (EstimateAccessDeniedError, EstimateNotFoundError) as exc:
+        handle_estimate_error(exc)
+
+
+@router.patch("/api/v1/estimates/{estimate_id}/milestones/{phase_key}", response_model=EstimateMilestoneListResponse)
+def update_estimate_milestone(
+    estimate_id: int,
+    phase_key: str,
+    payload: EstimateMilestoneUpdateRequest,
+    current_user: CurrentUser,
+    session: Session = Depends(get_db),
+) -> dict:
+    try:
+        return EstimateService.update_milestone(
+            session, user=current_user, estimate_id=estimate_id, phase_key=phase_key,
+            status=payload.status, note=payload.note,
+        )
+    except (EstimateAccessDeniedError, EstimateNotFoundError, EstimateStateConflictError) as exc:
         handle_estimate_error(exc)

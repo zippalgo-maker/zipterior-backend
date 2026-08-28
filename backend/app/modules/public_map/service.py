@@ -17,6 +17,24 @@ class PublicComplexNotFoundError(ValueError):
 
 class PublicMapService:
     @staticmethod
+    def list_companies_by_region(
+        session: Session,
+        *,
+        sido: str | None,
+        sigungu: str | None,
+        exclude_company_ids: list[int] | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        items = repository.list_public_companies_by_region(
+            session,
+            sido=sido,
+            sigungu=sigungu,
+            exclude_company_ids=exclude_company_ids,
+            limit=limit,
+        )
+        return {"items": items}
+
+    @staticmethod
     def get_company(session: Session, company_id: int) -> dict[str, Any]:
         company = repository.find_public_company(session, company_id)
         if company is None:

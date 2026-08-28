@@ -176,7 +176,9 @@ def list_companies(session: Session, *, q: str | None, company_status: str | Non
     """), params).scalar_one())
     rows = session.execute(text(f"""
         SELECT c.id,c.owner_user_id,c.name,c.business_number,c.representative_name,c.phone,c.email::text AS email,
-               c.sido,c.sigungu,c.status,c.consultation_available,c.is_visible_on_map,c.approved_at,c.created_at,
+               c.sido,c.sigungu,c.status,c.consultation_available,c.is_visible_on_map,
+               (c.latitude IS NOT NULL AND c.longitude IS NOT NULL) AS has_map_coordinates,
+               c.approved_at,c.created_at,
                COALESCE(mp.plan_key,'free') AS plan_key,
                COALESCE(mp.display_name,'일반') AS plan_display_name,
                (SELECT COUNT(*) FROM portfolios p WHERE p.company_id=c.id AND p.status='approved' AND p.deleted_at IS NULL) AS portfolio_count
@@ -200,6 +202,7 @@ def get_company_detail(session: Session, company_id: int) -> dict[str, Any] | No
                 c.postal_code, c.address, c.address_detail, c.sido, c.sigungu, c.eupmyeondong,
                 c.latitude, c.longitude, c.intro, c.logo_path, c.website_url, c.kakao_url,
                 c.status, c.consultation_available, c.is_visible_on_map,
+                c.suspended_reason, c.suspended_until,
                 c.approved_at, c.approved_by, c.created_at, c.updated_at,
                 u.email::text AS owner_email, u.name AS owner_name, u.phone AS owner_phone,
                 u.status AS owner_status, u.last_login_at AS owner_last_login_at,
@@ -265,6 +268,8 @@ def get_user_detail(session: Session, user_id: int) -> dict[str, Any] | None:
                 u.phone,
                 u.role,
                 u.status,
+                u.suspended_reason,
+                u.suspended_until,
                 (u.password_hash IS NOT NULL) AS has_password,
                 (u.email::text LIKE '%@no-email.zipterior.kr') AS is_placeholder_email,
                 u.email_verified_at,

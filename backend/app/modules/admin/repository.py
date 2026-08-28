@@ -138,17 +138,21 @@ def suspend_company(
     *,
     company_id: int,
     owner_user_id: int,
+    reason: str,
+    suspended_until,
 ) -> None:
     session.execute(
         text(
             """
             UPDATE companies
             SET status = 'suspended',
+                suspended_reason = :reason,
+                suspended_until = :until,
                 updated_at = NOW()
             WHERE id = :company_id
             """
         ),
-        {"company_id": company_id},
+        {"company_id": company_id, "reason": reason, "until": suspended_until},
     )
 
     session.execute(
@@ -156,12 +160,87 @@ def suspend_company(
             """
             UPDATE users
             SET status = 'suspended',
+                suspended_reason = :reason,
+                suspended_until = :until,
                 updated_at = NOW()
+            WHERE id = :owner_user_id
+            """
+        ),
+        {"owner_user_id": owner_user_id, "reason": reason, "until": suspended_until},
+    )
+
+
+def unsuspend_company(session: Session, *, company_id: int, owner_user_id: int) -> None:
+    session.execute(
+        text(
+            """
+            UPDATE companies
+            SET status = 'active', suspended_reason = NULL, suspended_until = NULL, updated_at = NOW()
+            WHERE id = :company_id
+            """
+        ),
+        {"company_id": company_id},
+    )
+    session.execute(
+        text(
+            """
+            UPDATE users
+            SET status = 'active', suspended_reason = NULL, suspended_until = NULL, updated_at = NOW()
             WHERE id = :owner_user_id
             """
         ),
         {"owner_user_id": owner_user_id},
     )
+
+
+def suspend_user(session: Session, *, user_id: int, reason: str, suspended_until) -> None:
+    session.execute(
+        text(
+            """
+            UPDATE users
+            SET status = 'suspended', suspended_reason = :reason, suspended_until = :until, updated_at = NOW()
+            WHERE id = :user_id AND deleted_at IS NULL
+            """
+        ),
+        {"user_id": user_id, "reason": reason, "until": suspended_until},
+    )
+
+
+def unsuspend_user(session: Session, *, user_id: int) -> None:
+    session.execute(
+        text(
+            """
+            UPDATE users
+            SET status = 'active', suspended_reason = NULL, suspended_until = NULL, updated_at = NOW()
+            WHERE id = :user_id
+            """
+        ),
+        {"user_id": user_id},
+    )
+
+
+def find_expired_suspended_users(session: Session) -> list[dict[str, Any]]:
+    rows = session.execute(
+        text(
+            """
+            SELECT id, role FROM users
+            WHERE status = 'suspended' AND suspended_until IS NOT NULL AND suspended_until <= NOW()
+            """
+        )
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def find_expired_suspended_companies(session: Session) -> list[dict[str, Any]]:
+    rows = session.execute(
+        text(
+            """
+            SELECT id, owner_user_id FROM companies
+            WHERE status = 'suspended' AND suspended_until IS NOT NULL AND suspended_until <= NOW()
+            """
+        )
+    ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def revoke_owner_refresh_tokens(

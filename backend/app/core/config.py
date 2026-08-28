@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
 
+    # 2026-08-26: 집팔고360 SSO 연동(iframe 임베드 시 자동 로그인).
+    # 미설정이면(둘 다 None/기본값) 기존과 동일하게 안전 폴백 — SSO
+    # exchange 엔드포인트가 그냥 None을 반환하고 프론트는 자체 로그인
+    # 화면으로 이어짐. zippalgo360 저장소 docs/WORK_LOG.md 참고.
+    sso_shared_secret: str | None = None
+    zippalgo360_api_base_url: str = "https://zippalgo360.com"
+
     model_config = SettingsConfigDict(
         env_file=(BASE_DIR / ".env", Path("/srv/zipterior/config/kakao_maps.env")),
         env_file_encoding="utf-8",

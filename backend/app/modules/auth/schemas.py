@@ -66,8 +66,21 @@ class UserResponse(BaseModel):
     role: str
     status: str
     marketing_agreed: bool
+    notification_prefs: dict = Field(default_factory=dict)
     email_verified_at: datetime | None
     created_at: datetime
+
+
+# v1.10.1(2026-08-26): 알림 설정 화면(목업 15번).
+class NotificationPrefsUpdate(BaseModel):
+    estimate_response: bool | None = None
+    company_comment: bool | None = None
+    photo_upload: bool | None = None
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    notification_prefs: NotificationPrefsUpdate | None = None
+    marketing_agreed: bool | None = None
 
 
 class TokenResponse(BaseModel):
@@ -100,3 +113,7 @@ class LogoutRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class SsoExchangeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=256)

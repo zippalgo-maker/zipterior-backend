@@ -43,6 +43,7 @@ class AdminCompanyItem(BaseModel):
     status: str
     consultation_available: bool
     is_visible_on_map: bool
+    has_map_coordinates: bool = True
     approved_at: datetime | None = None
     created_at: datetime
     plan_key: str = "free"
@@ -87,6 +88,8 @@ class AdminCompanyDetailResponse(BaseModel):
     status: str
     consultation_available: bool
     is_visible_on_map: bool
+    suspended_reason: str | None = None
+    suspended_until: datetime | None = None
     approved_at: datetime | None = None
     approved_by: int | None = None
     created_at: datetime
@@ -148,6 +151,8 @@ class AdminUserDetailResponse(BaseModel):
     phone: str | None = None
     role: str
     status: str
+    suspended_reason: str | None = None
+    suspended_until: datetime | None = None
     has_password: bool
     is_placeholder_email: bool
     email_verified_at: datetime | None = None

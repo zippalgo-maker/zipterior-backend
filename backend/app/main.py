@@ -27,6 +27,7 @@ from app.modules.admin.comment_moderation_router import router as admin_comment_
 from app.modules.admin.complex_router import router as admin_complexes_router
 from app.modules.public_map.router import router as public_map_router
 from app.modules.estimates.router import router as estimates_router
+from app.modules.reviews.router import router as reviews_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.chat.router import router as chat_router
 from app.modules.company_favorites.router import router as company_favorites_router
@@ -49,6 +50,9 @@ from app.modules.mobile_intro_slides.router import (
     admin_router as admin_mobile_intro_slides_router,
     public_router as public_mobile_intro_slides_router,
 )
+from app.modules.admin.server_status_router import router as admin_server_status_router
+from app.modules.admin.activity_router import router as admin_activity_router
+from app.modules.admin.suspension_worker import start_suspension_worker
 
 
 configure_logging()
@@ -80,6 +84,7 @@ app.include_router(admin_comment_moderation_router)
 app.include_router(admin_complexes_router)
 app.include_router(public_map_router)
 app.include_router(estimates_router)
+app.include_router(reviews_router)
 app.include_router(notifications_router)
 app.include_router(chat_router)
 app.include_router(company_favorites_router)
@@ -94,6 +99,8 @@ app.include_router(public_portfolio_display_settings_router)
 app.include_router(admin_portfolio_display_settings_router)
 app.include_router(public_mobile_intro_slides_router)
 app.include_router(admin_mobile_intro_slides_router)
+app.include_router(admin_server_status_router)
+app.include_router(admin_activity_router)
 
 # RequestContext를 CORS보다 안쪽에 두어 정상/오류 응답 모두 request id를 갖게 한다.
 app.add_middleware(RequestContextMiddleware)
@@ -102,6 +109,8 @@ app.add_middleware(
     allow_origins=[
         "https://zipterior.kr",
         "https://www.zipterior.kr",
+        "https://interior.zippalgo360.com",
+        "https://zipterior.zippalgo360.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -114,6 +123,7 @@ def start_background_workers() -> None:
     # DB 작업 상태를 기준으로 재기동 후에도 중단된 일괄등록을 이어 처리한다.
     start_bulk_import_worker()
     start_complex_region_import_worker()
+    start_suspension_worker()
 
 
 @app.get("/api/health", tags=["system"])
@@ -137,3 +147,5 @@ def health() -> dict:
             "timezone": database["timezone"],
         },
     }
+
+

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.modules.feature_flags import repository as feature_flags_repository
@@ -83,6 +83,44 @@ def find_public_company(session: Session, company_id: int) -> dict[str, Any] | N
         {"company_id": company_id},
     ).mappings().one_or_none()
     return dict(row) if row else None
+
+
+# v2.5.x: 다건 견적요청 "우리 지역 등록 파트너" 후보용. 실제 서비스지역은
+# companies.sido(비어있는 경우가 많음, reference_zipterior_docs 참고)가
+# 아니라 company_service_regions 조인 테이블이 정답이라 find_public_company
+# 등 기존 함수와 같은 방식으로 그걸 기준으로 조회한다.
+def list_public_companies_by_region(
+    session: Session,
+    *,
+    sido: str | None,
+    sigungu: str | None,
+    exclude_company_ids: list[int] | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    exclude_ids = list(exclude_company_ids) if exclude_company_ids else [0]
+    stmt = text(
+        """
+        SELECT c.id, c.name, c.logo_path, csr.sido, csr.sigungu,
+               COUNT(DISTINCT p.id) FILTER (
+                   WHERE p.status='approved' AND p.deleted_at IS NULL
+               ) AS portfolio_count
+        FROM companies c
+        JOIN company_service_regions csr ON csr.company_id = c.id
+        LEFT JOIN portfolios p ON p.company_id = c.id
+        WHERE c.status='active' AND c.deleted_at IS NULL
+          AND c.id NOT IN :exclude_ids
+          AND (CAST(:sido AS text) IS NULL OR csr.sido = CAST(:sido AS text))
+          AND (CAST(:sigungu AS text) IS NULL OR csr.sigungu = CAST(:sigungu AS text))
+        GROUP BY c.id, csr.sido, csr.sigungu
+        ORDER BY portfolio_count DESC, c.id
+        LIMIT :limit
+        """
+    ).bindparams(bindparam("exclude_ids", expanding=True))
+    rows = session.execute(
+        stmt,
+        {"sido": sido, "sigungu": sigungu, "exclude_ids": exclude_ids, "limit": limit},
+    ).mappings().all()
+    return [dict(r) for r in rows]
 
 
 def list_company_regions(session: Session, company_id: int) -> list[dict[str, Any]]:

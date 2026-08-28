@@ -19,10 +19,41 @@ USER_COLUMNS = """
     email_verified_at,
     last_login_at,
     marketing_agreed,
+    notification_prefs,
     created_at,
     updated_at,
     deleted_at
 """
+
+
+# v1.10.1(2026-08-26): 알림 설정 화면(목업 15번) -- 견적응답/시공업체댓글/
+# 현장사진 3개 토글. 마케팅 토글은 기존 marketing_agreed 그대로 재사용.
+def update_user_settings(
+    session: Session,
+    *,
+    user_id: int,
+    notification_prefs: dict[str, Any] | None,
+    marketing_agreed: bool | None,
+) -> dict[str, Any]:
+    sets = ["updated_at = NOW()"]
+    params: dict[str, Any] = {"user_id": user_id}
+    if notification_prefs is not None:
+        sets.append("notification_prefs = CAST(:notification_prefs AS jsonb)")
+        params["notification_prefs"] = json.dumps(notification_prefs, ensure_ascii=False)
+    if marketing_agreed is not None:
+        sets.append("marketing_agreed = :marketing_agreed")
+        params["marketing_agreed"] = marketing_agreed
+    query = text(
+        f"""
+        UPDATE users
+        SET {", ".join(sets)}
+        WHERE id = :user_id
+        RETURNING {USER_COLUMNS}
+        """
+    )
+    row = session.execute(query, params).mappings().one()
+    session.commit()
+    return dict(row)
 
 
 def find_user_by_email(

@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.modules.public_map.schemas import (
     PublicApartmentTypeListResponse,
     PublicCompanyDetailResponse,
+    PublicCompanyListResponse,
     PublicComplexDetailResponse,
     PublicComplexListResponse,
     PublicMapClusterGridSummaryResponse,
@@ -36,6 +37,23 @@ def validate_bbox(*, north: float, south: float, east: float, west: float) -> No
         raise HTTPException(status_code=422, detail="south는 north보다 클 수 없습니다.")
     if west > east:
         raise HTTPException(status_code=422, detail="west는 east보다 클 수 없습니다.")
+
+
+@router.get("/companies", response_model=PublicCompanyListResponse)
+def list_public_companies_by_region(
+    sido: str | None = Query(default=None, max_length=50),
+    sigungu: str | None = Query(default=None, max_length=50),
+    exclude_company_ids: list[int] | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=30),
+    session: Session = Depends(get_db),
+):
+    return PublicMapService.list_companies_by_region(
+        session,
+        sido=norm(sido),
+        sigungu=norm(sigungu),
+        exclude_company_ids=exclude_company_ids,
+        limit=limit,
+    )
 
 
 @router.get("/companies/{company_id}", response_model=PublicCompanyDetailResponse)

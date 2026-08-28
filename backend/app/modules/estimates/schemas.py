@@ -36,6 +36,17 @@ class EstimateCreateRequest(BaseModel):
     desired_start_date: date | None = None
     contact_method: Literal["phone", "chat", "either"] | None = None
     allow_recommendations: bool = True
+    # v2.5.x: 고객이 "같은 조건 시공업체"/"지역 파트너" 후보 중 여러 곳을
+    # 직접 골라 한 번에 견적요청을 보내는 다건 배정 기능. 없으면(None)
+    # 기존처럼 portfolio_id 기반 단일 자동배정 또는 관리자 배정으로
+    # 폴백한다(service.py EstimateService.create 참고).
+    company_ids: list[int] | None = Field(default=None, min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def dedupe_company_ids(self):
+        if self.company_ids:
+            self.company_ids = list(dict.fromkeys(self.company_ids))
+        return self
 
     @model_validator(mode="after")
     def validate_budget(self):
@@ -201,3 +212,27 @@ class AdminEstimateAutoAssignResponse(BaseModel):
     assignment_count: int
     candidate_count: int
     message: str
+
+
+# v1.10.1(2026-08-26): 목업 13번 화면(시공 진행상황) -- 5단계 공정.
+# 댓글은 별도 스키마 없이 기존 chat 모듈(estimate_request_id로 연결된
+# 고객-업체 상담방)을 그대로 재사용한다.
+MilestonePhase = Literal["contract", "demolition", "mep", "carpentry_finish", "completion"]
+MilestoneStatus = Literal["pending", "in_progress", "done"]
+
+
+class EstimateMilestoneResponse(BaseModel):
+    phase_key: MilestonePhase
+    status: MilestoneStatus
+    note: str | None = None
+    completed_at: datetime | None = None
+    updated_at: datetime
+
+
+class EstimateMilestoneListResponse(BaseModel):
+    items: list[EstimateMilestoneResponse]
+
+
+class EstimateMilestoneUpdateRequest(BaseModel):
+    status: MilestoneStatus
+    note: str | None = Field(default=None, max_length=500)
