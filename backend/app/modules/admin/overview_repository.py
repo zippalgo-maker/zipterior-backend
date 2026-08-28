@@ -2,6 +2,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.common.rich_text import rich_text_to_plain
+
 
 def dashboard(session: Session) -> dict[str, int]:
     row = session.execute(text("""
@@ -171,6 +173,16 @@ def list_companies(session: Session, *, q: str | None, company_status: str | Non
         ) active_cm ON TRUE
         LEFT JOIN membership_plans mp ON mp.id=active_cm.plan_id
     """
+    last_sales_contact_join = """
+        LEFT JOIN LATERAL (
+            SELECT sc.contacted_at, sc.content, stc.label AS status_label
+            FROM company_sales_contacts sc
+            LEFT JOIN sales_contact_codes stc ON stc.id = sc.status_code_id
+            WHERE sc.company_id = c.id
+            ORDER BY sc.contacted_at DESC, sc.id DESC
+            LIMIT 1
+        ) last_sc ON TRUE
+    """
     total = int(session.execute(text(f"""
         SELECT COUNT(*) FROM companies c {membership_join} WHERE {clause}
     """), params).scalar_one())
@@ -183,12 +195,18 @@ def list_companies(session: Session, *, q: str | None, company_status: str | Non
                COALESCE(mp.display_name,'일반') AS plan_display_name,
                (SELECT COUNT(*) FROM portfolios p WHERE p.company_id=c.id AND p.status='approved' AND p.deleted_at IS NULL) AS portfolio_count,
                (SELECT COUNT(*) FROM company_sales_contacts sc WHERE sc.company_id=c.id) AS sales_contact_count,
-               (SELECT MAX(sc.contacted_at) FROM company_sales_contacts sc WHERE sc.company_id=c.id) AS last_sales_contact_at
-        FROM companies c {membership_join}
+               last_sc.contacted_at AS last_sales_contact_at,
+               last_sc.status_label AS last_sales_contact_status_label,
+               last_sc.content AS last_sales_contact_content
+        FROM companies c {membership_join} {last_sales_contact_join}
         WHERE {clause}
         ORDER BY c.id DESC LIMIT :limit OFFSET :offset
     """), params).mappings().all()
-    return [dict(r) for r in rows], total
+    items = [dict(r) for r in rows]
+    for item in items:
+        raw_content = item.pop("last_sales_contact_content", None)
+        item["last_sales_contact_preview"] = rich_text_to_plain(raw_content)[:60]
+    return items, total
 
 
 # 2026-08-25: 업체관리 "상세보기" -- 회원 상세(get_user_detail)와 같은

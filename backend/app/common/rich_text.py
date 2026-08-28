@@ -76,3 +76,31 @@ def sanitize_rich_text(raw_html: str | None) -> str:
     parser.feed(raw_html)
     parser.close()
     return parser.result()
+
+
+class _PlainTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "br":
+            self._parts.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def result(self) -> str:
+        return " ".join("".join(self._parts).split())
+
+
+def rich_text_to_plain(html_value: str | None) -> str:
+    """목록 미리보기용 -- 이미 sanitize된 값이라도 태그를 그대로
+    잘라서 보여주면 안 되므로(태그가 중간에 잘려 깨질 수 있음) 항상
+    순수 텍스트로 변환한 뒤에 자른다."""
+    if not html_value:
+        return ""
+    parser = _PlainTextExtractor()
+    parser.feed(html_value)
+    parser.close()
+    return parser.result()

@@ -51,6 +51,8 @@ class AdminCompanyItem(BaseModel):
     portfolio_count: int = 0
     sales_contact_count: int = 0
     last_sales_contact_at: datetime | None = None
+    last_sales_contact_status_label: str | None = None
+    last_sales_contact_preview: str | None = None
 
 class AdminCompanyListResponse(BaseModel):
     items: list[AdminCompanyItem]
