@@ -179,7 +179,9 @@ def list_companies(session: Session, *, q: str | None, company_status: str | Non
                c.sido,c.sigungu,c.status,c.consultation_available,c.is_visible_on_map,c.approved_at,c.created_at,
                COALESCE(mp.plan_key,'free') AS plan_key,
                COALESCE(mp.display_name,'일반') AS plan_display_name,
-               (SELECT COUNT(*) FROM portfolios p WHERE p.company_id=c.id AND p.status='approved' AND p.deleted_at IS NULL) AS portfolio_count
+               (SELECT COUNT(*) FROM portfolios p WHERE p.company_id=c.id AND p.status='approved' AND p.deleted_at IS NULL) AS portfolio_count,
+               (SELECT COUNT(*) FROM company_sales_contacts sc WHERE sc.company_id=c.id) AS sales_contact_count,
+               (SELECT MAX(sc.contacted_at) FROM company_sales_contacts sc WHERE sc.company_id=c.id) AS last_sales_contact_at
         FROM companies c {membership_join}
         WHERE {clause}
         ORDER BY c.id DESC LIMIT :limit OFFSET :offset
